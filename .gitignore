@@ -1,0 +1,15 @@
+bin/
+obj/
+.vs/
+*.user
+*.db
+*.log
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+Thumbs.db
