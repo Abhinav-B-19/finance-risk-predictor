@@ -12,9 +12,8 @@ public class PredictionService
         _context = context;
     }
 
-    public async Task<(string risk, string userKey)> GetRiskAsync(PredictionRequestDto request)
-    {
-        // 🔹 Step 1: Identify user
+    public async Task<(string risk, string userKey)> GetRiskAsync(PredictionRequestDto request){
+        // Identify user
         User? user = null;
 
         if (!string.IsNullOrEmpty(request.UserKey))
@@ -41,10 +40,10 @@ public class PredictionService
             await _context.SaveChangesAsync();
         }
 
-        // 🔹 Step 2: Calculate DTI
+        // Calculate DTI
         var dti = request.Debt / request.Income;
 
-        // 🔹 Step 3: Call ML API
+        // Call ML API
         var response = await _httpClient.PostAsJsonAsync(
             "http://localhost:8000/predict",
             new { dti = dti }
@@ -54,7 +53,7 @@ public class PredictionService
 
         var risk = result?["risk"] ?? "Unknown";
 
-        // 🔹 Step 4: Save prediction
+        // Save prediction
         var prediction = new Prediction
         {
             UserId = user.Id,
@@ -69,5 +68,28 @@ public class PredictionService
         await _context.SaveChangesAsync();
 
         return (risk, user.UserKey);
+    }
+
+    public async Task<List<PredictionResponseDto>> GetUserHistoryAsync(string userKey)
+    {
+        var user = await _context.Users
+            .FirstOrDefaultAsync(u => u.UserKey == userKey);
+
+        if (user == null)
+            return new List<PredictionResponseDto>();
+
+        return await _context.Predictions
+            .Where(p => p.UserId == user.Id)
+            .OrderByDescending(p => p.CreatedAt)
+            .Select(p => new PredictionResponseDto
+            {
+                Income = p.Income,
+                Expenses = p.Expenses,
+                Debt = p.Debt,
+                Dti = p.Dti,
+                Risk = p.Risk,
+                CreatedAt = p.CreatedAt
+            })
+            .ToListAsync();
     }
 }
