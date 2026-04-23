@@ -1,4 +1,11 @@
 public class PredictionRequestDto
 {
-    public double Dti { get; set; }
+    public string? UserKey { get; set; }
+
+    public required string Name { get; set; }
+    public required string Email { get; set; }
+
+    public double Income { get; set; }
+    public double Expenses { get; set; }
+    public double Debt { get; set; }
 }

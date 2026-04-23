@@ -1,10 +1,11 @@
 from fastapi import FastAPI
-import joblib
+from pydantic import BaseModel
 
 app = FastAPI()
 
+class PredictionInput(BaseModel):
+    dti: float
 @app.post("/predict")
-def predict(data: dict):
-    # dummy logic for now
-    risk = "High" if data["dti"] > 0.4 else "Low"
+def predict(data: PredictionInput):
+    risk = "High" if data.dti > 0.4 else "Low"
     return {"risk": risk}
