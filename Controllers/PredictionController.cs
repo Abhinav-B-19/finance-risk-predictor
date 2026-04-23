@@ -22,4 +22,11 @@ public class PredictionController : ControllerBase
             userKey = result.userKey
         });
     }
+
+    [HttpGet("history/{userKey}")]
+    public async Task<IActionResult> GetHistory(string userKey)
+    {
+        var data = await _service.GetUserHistoryAsync(userKey);
+        return Ok(data);
+    }
 }
