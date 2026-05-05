@@ -12,8 +12,11 @@ public class PredictionService
         _context = context;
     }
 
-    public async Task<(string risk, string userKey)> GetRiskAsync(PredictionRequestDto request){
-        // Identify user
+    public async Task<(string risk, string userKey)> GetRiskAsync(PredictionRequestDto request)
+    {
+        // ─────────────────────────────────────────
+        // 1. Identify user
+        // ─────────────────────────────────────────
         User? user = null;
 
         if (!string.IsNullOrEmpty(request.UserKey))
@@ -40,33 +43,93 @@ public class PredictionService
             await _context.SaveChangesAsync();
         }
 
-        // Calculate DTI
-        var dti = request.Debt / request.Income;
+        // ─────────────────────────────────────────
+        // 2. Fetch history (for lag features)
+        // ─────────────────────────────────────────
+        var history = await _context.Predictions
+            .Where(p => p.UserId == user.Id)
+            .OrderByDescending(p => p.CreatedAt)
+            .Take(2)
+            .ToListAsync();
 
-        // Call ML API
+        // ─────────────────────────────────────────
+        // 3. Build features
+        // ─────────────────────────────────────────
+        double currentDti = request.Debt / request.Income;
+
+        double GetDti(Prediction p) =>
+            p.Income > 0 ? p.Debt / p.Income : 0;
+
+        var prev1 = history.ElementAtOrDefault(0);
+        var prev2 = history.ElementAtOrDefault(1);
+
+        var prev1Dti = prev1 != null ? GetDti(prev1) : currentDti;
+        var prev2Dti = prev2 != null ? GetDti(prev2) : prev1Dti;
+
+        var prev1Savings = prev1 != null
+            ? (prev1.Income - prev1.Expenses) / prev1.Income
+            : 0;
+
+        var prev2Savings = prev2 != null
+            ? (prev2.Income - prev2.Expenses) / prev2.Income
+            : 0;
+
+        var prev1Debt = prev1?.Debt ?? request.Debt;
+        var prev2Debt = prev2?.Debt ?? prev1Debt;
+
+        var features = new
+        {
+            income = request.Income,
+            expenses = request.Expenses,
+            debt = request.Debt,
+            shock = "none",
+
+            dti_lag1 = prev1Dti,
+            dti_lag2 = prev2Dti,
+            savings_ratio_lag1 = prev1Savings,
+            savings_ratio_lag2 = prev2Savings,
+            debt_lag1 = prev1Debt,
+            debt_lag2 = prev2Debt
+        };
+
+        // ─────────────────────────────────────────
+        // 4. Call ML API
+        // ─────────────────────────────────────────
         var response = await _httpClient.PostAsJsonAsync(
             "http://localhost:8000/predict",
-            new { dti = dti }
+            features
         );
 
-        var result = await response.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+        if (!response.IsSuccessStatusCode)
+        {
+            return ("Error", user.UserKey);
+        }
 
-        var risk = result?["risk"] ?? "Unknown";
+        var result = await response.Content.ReadFromJsonAsync<Dictionary<string, object>>();
 
-        // Save prediction
+        var risk = result != null && result.ContainsKey("risk_level")
+            ? result["risk_level"]?.ToString() ?? "Unknown"
+            : "Unknown";
+
+        // ─────────────────────────────────────────
+        // 5. Save prediction
+        // ─────────────────────────────────────────
         var prediction = new Prediction
         {
             UserId = user.Id,
             Income = request.Income,
             Expenses = request.Expenses,
             Debt = request.Debt,
-            Dti = dti,
+            Dti = currentDti,
             Risk = risk
         };
 
         _context.Predictions.Add(prediction);
         await _context.SaveChangesAsync();
 
+        // ─────────────────────────────────────────
+        // 6. Return result
+        // ─────────────────────────────────────────
         return (risk, user.UserKey);
     }
 
