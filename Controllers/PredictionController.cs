@@ -14,13 +14,25 @@ public class PredictionController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Predict([FromBody] PredictionRequestDto request)
     {
-        var result = await _service.GetRiskAsync(request);
-
-        return Ok(new
+        try
         {
-            risk = result.risk,
-            userKey = result.userKey
-        });
+            var result = await _service.GetRiskAsync(request);
+
+            return Ok(new
+            {
+                status = "success",
+                predictions = result.risk,
+                userKey = result.userKey
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new
+            {
+                status = "error",
+                message = ex.Message
+            });
+        }
     }
 
     [HttpGet("history/{userKey}")]
