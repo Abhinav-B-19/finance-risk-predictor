@@ -11,6 +11,16 @@ public class PredictionController : ControllerBase
         _service = service;
     }
 
+    [HttpGet("health")]
+    public IActionResult Health()
+    {
+        return Ok(new
+        {
+            status = "ok",
+            service = "finance-risk-backend"
+        });
+    }
+
     [HttpPost]
     public async Task<IActionResult> Predict([FromBody] PredictionRequestDto request)
     {

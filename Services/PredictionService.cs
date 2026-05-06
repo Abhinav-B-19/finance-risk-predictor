@@ -6,33 +6,62 @@ public class PredictionService
 {
     private readonly HttpClient _httpClient;
     private readonly AppDbContext _context;
+    private readonly IConfiguration _configuration;
 
-    public PredictionService(HttpClient httpClient, AppDbContext context)
+    public PredictionService(
+        HttpClient httpClient,
+        AppDbContext context,
+        IConfiguration configuration)
     {
         _httpClient = httpClient;
         _context = context;
+        _configuration = configuration;
     }
 
     // ─────────────────────────────────────────
     // MAIN PREDICTION FLOW
     // ─────────────────────────────────────────
-    public async Task<(object risk, string userKey)> GetRiskAsync(PredictionRequestDto request)
+    public async Task<(object risk, string userKey)> GetRiskAsync(
+        PredictionRequestDto request)
     {
         // ─────────────────────────────────────────
-        // 1. Identify user
+        // 1. INPUT VALIDATION
+        // ─────────────────────────────────────────
+        if (request.Income <= 0)
+        {
+            throw new Exception(
+                "Income must be greater than 0");
+        }
+
+        if (request.Expenses < 0)
+        {
+            throw new Exception(
+                "Expenses cannot be negative");
+        }
+
+        if (request.Debt < 0)
+        {
+            throw new Exception(
+                "Debt cannot be negative");
+        }
+
+        // ─────────────────────────────────────────
+        // 2. IDENTIFY USER
         // ─────────────────────────────────────────
         User? user = null;
 
         if (!string.IsNullOrEmpty(request.UserKey))
         {
             user = await _context.Users
-                .FirstOrDefaultAsync(u => u.UserKey == request.UserKey);
+                .FirstOrDefaultAsync(
+                    u => u.UserKey == request.UserKey);
         }
 
         if (user == null)
         {
             user = await _context.Users
-                .FirstOrDefaultAsync(u => u.Email == request.Email);
+                .FirstOrDefaultAsync(
+                    u => u.Email == request.Email);
         }
 
         if (user == null)
@@ -49,7 +78,7 @@ public class PredictionService
         }
 
         // ─────────────────────────────────────────
-        // 2. Fetch last 6 records
+        // 3. FETCH LAST 6 RECORDS
         // ─────────────────────────────────────────
         var history = await _context.Predictions
             .Where(p => p.UserId == user.Id)
@@ -58,14 +87,14 @@ public class PredictionService
             .ToListAsync();
 
         // ─────────────────────────────────────────
-        // 3. Current metrics
+        // 4. CURRENT METRICS
         // ─────────────────────────────────────────
         double currentDti = request.Income > 0
             ? request.Debt / request.Income
             : 0;
 
         // ─────────────────────────────────────────
-        // 4. Rolling historical features
+        // 5. HISTORICAL FEATURES
         // ─────────────────────────────────────────
         int historyCount = history.Count;
 
@@ -98,7 +127,7 @@ public class PredictionService
         }
 
         // ─────────────────────────────────────────
-        // 5. Build ML feature payload
+        // 6. BUILD ML PAYLOAD
         // ─────────────────────────────────────────
         var features = new
         {
@@ -121,75 +150,80 @@ public class PredictionService
         };
 
         // ─────────────────────────────────────────
-        // 6. Call ML API
+        // 7. CALL ML SERVICE
         // ─────────────────────────────────────────
-        var response = await _httpClient.PostAsJsonAsync(
-            "http://localhost:8000/predict",
-            features
-        );
+        var mlUrl =
+            _configuration["MLService:BaseUrl"] +
+            "/predict";
+
+        var response =
+            await _httpClient.PostAsJsonAsync(
+                mlUrl,
+                features
+            );
 
         if (!response.IsSuccessStatusCode)
         {
-            throw new Exception("ML API request failed");
+            var error = await response.Content.ReadAsStringAsync();
+
+            throw new Exception(
+                $"ML API request failed: {error}"
+            );
         }
 
         var result = await response.Content
-            .ReadFromJsonAsync<Dictionary<string, JsonElement>>();
+            .ReadFromJsonAsync<
+                Dictionary<string, JsonElement>>();
 
-        if (result == null || !result.ContainsKey("predictions"))
+        if (result == null ||
+            !result.ContainsKey("predictions"))
         {
-            throw new Exception("Invalid ML API response");
+            throw new Exception(
+                "Invalid ML API response");
         }
 
-        var predictions = result["predictions"];
+        var predictions =
+            result["predictions"];
 
         // ─────────────────────────────────────────
-        // 7. Parse prediction helper
+        // 8. BUILD FORECAST RESPONSE
         // ─────────────────────────────────────────
-        object ParseMonth(string monthKey)
+        var forecast =
+            new Dictionary<string, object>();
+
+        foreach (var month in
+            predictions.EnumerateObject())
         {
-            var month = predictions.GetProperty(monthKey);
+            var monthData = month.Value;
 
-            return new
+            var riskScore = monthData
+                .GetProperty("risk_score")
+                .GetDouble();
+
+            var riskLevel = monthData
+                .GetProperty("risk_level")
+                .GetString() ?? "UNKNOWN";
+
+            forecast[month.Name] = new
             {
-                risk_score = month
-                    .GetProperty("risk_score")
-                    .GetDouble(),
-
-                risk_level = month
-                    .GetProperty("risk_level")
-                    .GetString()
+                risk_score = riskScore,
+                risk_level = riskLevel
             };
         }
 
         // ─────────────────────────────────────────
-        // 8. Create future month mapping
-        // ─────────────────────────────────────────
-        var now = DateTime.UtcNow;
-
-        string month1Key = now.AddMonths(1).ToString("yyyy-MM");
-        string month2Key = now.AddMonths(2).ToString("yyyy-MM");
-        string month3Key = now.AddMonths(3).ToString("yyyy-MM");
-
-        var forecast = new Dictionary<string, object>
-        {
-            [month1Key] = ParseMonth("month_1"),
-            [month2Key] = ParseMonth("month_2"),
-            [month3Key] = ParseMonth("month_3")
-        };
-
-        // ─────────────────────────────────────────
-        // 9. Save raw prediction record
+        // 9. SAVE PREDICTION SNAPSHOT
         // ─────────────────────────────────────────
         var prediction = new Prediction
         {
             UserId = user.Id,
+
             Income = request.Income,
             Expenses = request.Expenses,
             Debt = request.Debt,
+
             Dti = currentDti,
 
-            // legacy placeholder
             Risk = "Forecast Generated"
         };
 
@@ -198,19 +232,18 @@ public class PredictionService
         await _context.SaveChangesAsync();
 
         // ─────────────────────────────────────────
-        // 10. Save forecast snapshots
+        // 10. SAVE FORECASTS
         // ─────────────────────────────────────────
-        void AddForecast(
-            string forecastMonth,
-            string monthKey)
+        foreach (var month in
+            predictions.EnumerateObject())
         {
-            var month = predictions.GetProperty(monthKey);
+            var monthData = month.Value;
 
-            var riskScore = month
+            var riskScore = monthData
                 .GetProperty("risk_score")
                 .GetDouble();
 
-            var riskLevel = month
+            var riskLevel = monthData
                 .GetProperty("risk_level")
                 .GetString() ?? "UNKNOWN";
 
@@ -218,7 +251,7 @@ public class PredictionService
             {
                 UserId = user.Id,
 
-                ForecastMonth = forecastMonth,
+                ForecastMonth = month.Name,
 
                 RiskScore = riskScore,
 
@@ -228,62 +261,73 @@ public class PredictionService
             });
         }
 
-        AddForecast(month1Key, "month_1");
-        AddForecast(month2Key, "month_2");
-        AddForecast(month3Key, "month_3");
-
         await _context.SaveChangesAsync();
 
         // ─────────────────────────────────────────
-        // 11. Return response
+        // 11. RETURN RESPONSE
         // ─────────────────────────────────────────
-        return (forecast, user.UserKey);
+        return (
+            forecast,
+            user.UserKey
+        );
     }
 
     // ─────────────────────────────────────────
-    // HISTORY
+    // USER HISTORY
     // ─────────────────────────────────────────
-    public async Task<List<PredictionResponseDto>> GetUserHistoryAsync(string userKey)
+    public async Task<List<PredictionResponseDto>>
+        GetUserHistoryAsync(string userKey)
     {
         var user = await _context.Users
             .Include(u => u.Forecasts)
-            .FirstOrDefaultAsync(u => u.UserKey == userKey);
+            .FirstOrDefaultAsync(
+                u => u.UserKey == userKey);
 
         if (user == null)
         {
-            return new List<PredictionResponseDto>();
+            return new List<
+                PredictionResponseDto>();
         }
 
         var history = await _context.Predictions
             .Where(p => p.UserId == user.Id)
-            .OrderByDescending(p => p.CreatedAt)
+            .OrderByDescending(
+                p => p.CreatedAt)
             .ToListAsync();
 
-        return history.Select(p => new PredictionResponseDto
-        {
-            Income = p.Income,
+        return history.Select(p =>
+            new PredictionResponseDto
+            {
+                Income = p.Income,
 
-            Expenses = p.Expenses,
+                Expenses = p.Expenses,
 
-            Debt = p.Debt,
+                Debt = p.Debt,
 
-            Dti = p.Dti,
+                Dti = p.Dti,
 
-            CreatedAt = p.CreatedAt,
+                CreatedAt = p.CreatedAt,
 
-            Forecasts = user.Forecasts
-                .Where(f =>
-                    f.GeneratedAt.Date == p.CreatedAt.Date)
-                .OrderBy(f => f.ForecastMonth)
-                .Select(f => new ForecastDto
-                {
-                    ForecastMonth = f.ForecastMonth,
+                Forecasts = user.Forecasts
+                    .Where(f =>
+                        f.GeneratedAt.Date ==
+                        p.CreatedAt.Date)
+                    .OrderBy(f =>
+                        f.ForecastMonth)
+                    .Select(f =>
+                        new ForecastDto
+                        {
+                            ForecastMonth =
+                                f.ForecastMonth,
 
-                    RiskScore = f.RiskScore,
+                            RiskScore =
+                                f.RiskScore,
 
-                    RiskLevel = f.RiskLevel
-                })
-                .ToList()
-        }).ToList();
+                            RiskLevel =
+                                f.RiskLevel
+                        })
+                    .ToList()
+            })
+            .ToList();
     }
 }
