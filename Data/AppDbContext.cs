@@ -7,6 +7,7 @@ public class AppDbContext : DbContext
 
     public DbSet<User> Users { get; set; }
     public DbSet<Prediction> Predictions { get; set; }
+    public DbSet<Forecast> Forecasts { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
