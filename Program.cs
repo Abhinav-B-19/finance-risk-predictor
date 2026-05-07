@@ -2,13 +2,28 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Services
+// ─────────────────────────────────────────
+// SERVICES
+// ─────────────────────────────────────────
+
 builder.Services.AddControllers();
+
 builder.Services.AddEndpointsApiExplorer();
+
 builder.Services.AddSwaggerGen();
+
 builder.Services.AddHttpClient<PredictionService>();
+
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseNpgsql(
+        builder.Configuration.GetConnectionString("DefaultConnection")
+    )
+);
+
+// ─────────────────────────────────────────
+// CORS
+// ─────────────────────────────────────────
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll",
@@ -20,18 +35,39 @@ builder.Services.AddCors(options =>
         });
 });
 
+// ─────────────────────────────────────────
+// RENDER PORT CONFIG
+// ─────────────────────────────────────────
+
+var port =
+    Environment.GetEnvironmentVariable("PORT")
+    ?? "10000";
+
+builder.WebHost.ConfigureKestrel(serverOptions =>
+{
+    serverOptions.ListenAnyIP(int.Parse(port));
+});
+
 var app = builder.Build();
+
+// ─────────────────────────────────────────
+// MIDDLEWARE
+// ─────────────────────────────────────────
+
+// Swagger enabled in production
+app.UseSwagger();
+
+app.UseSwaggerUI();
+
+// Enable CORS
 app.UseCors("AllowAll");
 
-// Middleware
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+// DO NOT use HTTPS redirection on Render
+// app.UseHttpsRedirection();
 
-app.UseHttpsRedirection();
+app.UseAuthorization();
 
+// Map controllers
 app.MapControllers();
 
 app.Run();

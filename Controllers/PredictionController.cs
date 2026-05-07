@@ -1,38 +1,63 @@
 using Microsoft.AspNetCore.Mvc;
 
 [ApiController]
-[Route("api/[controller]")]
 public class PredictionController : ControllerBase
 {
-    private readonly PredictionService _service;
+    private readonly PredictionService _predictionService;
 
-    public PredictionController(PredictionService service)
+    public PredictionController(
+        PredictionService predictionService)
     {
-        _service = service;
+        _predictionService = predictionService;
     }
+
+    // ─────────────────────────────────────────
+    // ROOT
+    // ─────────────────────────────────────────
+
+    [HttpGet("/")]
+    public IActionResult Root()
+    {
+        return Ok(new
+        {
+            service = "finance-risk-backend",
+            status = "running"
+        });
+    }
+
+    // ─────────────────────────────────────────
+    // HEALTH
+    // ─────────────────────────────────────────
 
     [HttpGet("health")]
     public IActionResult Health()
     {
         return Ok(new
         {
-            status = "ok",
-            service = "finance-risk-backend"
+            service = "finance-risk-backend",
+            status = "ok"
         });
     }
 
-    [HttpPost]
-    public async Task<IActionResult> Predict([FromBody] PredictionRequestDto request)
+    // ─────────────────────────────────────────
+    // PREDICT
+    // ─────────────────────────────────────────
+
+    [HttpPost("predict")]
+    public async Task<IActionResult> Predict(
+        [FromBody] PredictionRequestDto request)
     {
         try
         {
-            var result = await _service.GetRiskAsync(request);
+            var (forecast, userKey) =
+                await _predictionService
+                    .GetRiskAsync(request);
 
             return Ok(new
             {
                 status = "success",
-                predictions = result.risk,
-                userKey = result.userKey
+                userKey,
+                predictions = forecast
             });
         }
         catch (Exception ex)
@@ -45,10 +70,29 @@ public class PredictionController : ControllerBase
         }
     }
 
+    // ─────────────────────────────────────────
+    // HISTORY
+    // ─────────────────────────────────────────
+
     [HttpGet("history/{userKey}")]
-    public async Task<IActionResult> GetHistory(string userKey)
+    public async Task<IActionResult>
+        GetHistory(string userKey)
     {
-        var data = await _service.GetUserHistoryAsync(userKey);
-        return Ok(data);
+        try
+        {
+            var history =
+                await _predictionService
+                    .GetUserHistoryAsync(userKey);
+
+            return Ok(history);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new
+            {
+                status = "error",
+                message = ex.Message
+            });
+        }
     }
 }
