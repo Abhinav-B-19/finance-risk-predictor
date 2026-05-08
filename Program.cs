@@ -50,6 +50,8 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 
 var app = builder.Build();
 
+app.UseMiddleware<ExceptionMiddleware>();
+
 // ─────────────────────────────────────────
 // MIDDLEWARE
 // ─────────────────────────────────────────
