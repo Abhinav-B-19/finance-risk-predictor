@@ -156,30 +156,50 @@ public class PredictionService
             _configuration["MLService:BaseUrl"] +
             "/predict";
 
-        var response =
-            await _httpClient.PostAsJsonAsync(
+        HttpResponseMessage response;
+
+        try
+        {
+            response = await _httpClient.PostAsJsonAsync(
                 mlUrl,
                 features
             );
-
-        if (!response.IsSuccessStatusCode)
+        }
+        catch
         {
-            var error = await response.Content.ReadAsStringAsync();
-
             throw new Exception(
-                $"ML API request failed: {error}"
+                "Prediction service temporarily unavailable"
             );
         }
 
-        var result = await response.Content
-            .ReadFromJsonAsync<
-                Dictionary<string, JsonElement>>();
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new Exception(
+                "Prediction service temporarily unavailable"
+            );
+        }
+
+        Dictionary<string, JsonElement>? result;
+
+        try
+        {
+            result = await response.Content
+                .ReadFromJsonAsync<
+                    Dictionary<string, JsonElement>>();
+        }
+        catch
+        {
+            throw new Exception(
+                "Prediction service temporarily unavailable"
+            );
+        }
 
         if (result == null ||
             !result.ContainsKey("predictions"))
         {
             throw new Exception(
-                "Invalid ML API response");
+                "Prediction service temporarily unavailable"
+            );
         }
 
         var predictions =
@@ -249,7 +269,7 @@ public class PredictionService
 
             _context.Forecasts.Add(new Forecast
             {
-                UserId = user.Id,
+                PredictionId = prediction.Id,
 
                 ForecastMonth = month.Name,
 
@@ -279,7 +299,6 @@ public class PredictionService
         GetUserHistoryAsync(string userKey)
     {
         var user = await _context.Users
-            .Include(u => u.Forecasts)
             .FirstOrDefaultAsync(
                 u => u.UserKey == userKey);
 
@@ -290,6 +309,7 @@ public class PredictionService
         }
 
         var history = await _context.Predictions
+            .Include(p => p.Forecasts)
             .Where(p => p.UserId == user.Id)
             .OrderByDescending(
                 p => p.CreatedAt)
@@ -308,10 +328,7 @@ public class PredictionService
 
                 CreatedAt = p.CreatedAt,
 
-                Forecasts = user.Forecasts
-                    .Where(f =>
-                        f.GeneratedAt.Date ==
-                        p.CreatedAt.Date)
+                Forecasts = p.Forecasts
                     .OrderBy(f =>
                         f.ForecastMonth)
                     .Select(f =>
