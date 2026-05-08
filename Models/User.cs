@@ -11,6 +11,4 @@ public class User
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public List<Prediction> Predictions { get; set; } = new();
-    
-    public List<Forecast> Forecasts { get; set; } = new();
 }
