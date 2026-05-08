@@ -49,7 +49,11 @@ public class PredictionController : ControllerBase
             [FromBody]
             PredictionRequestDto request)
     {
-        var (forecast, userKey) =
+        var (
+            forecast,
+            userKey,
+            predictionId
+        ) =
             await _predictionService
                 .GetRiskAsync(request);
 
@@ -58,6 +62,8 @@ public class PredictionController : ControllerBase
             status = "success",
 
             userKey,
+
+            predictionId,
 
             predictions = forecast
         });

@@ -21,7 +21,13 @@ public class PredictionService
     // ─────────────────────────────────────────
     // MAIN PREDICTION FLOW
     // ─────────────────────────────────────────
-    public async Task<(object risk, string userKey)> GetRiskAsync(
+    public async Task<
+    (
+        object risk,
+        string userKey,
+        int predictionId
+    )>
+    GetRiskAsync(
         PredictionRequestDto request)
     {
         // ─────────────────────────────────────────
@@ -288,7 +294,8 @@ public class PredictionService
         // ─────────────────────────────────────────
         return (
             forecast,
-            user.UserKey
+            user.UserKey,
+            prediction.Id
         );
     }
 
