@@ -2,11 +2,11 @@ public class Forecast
 {
     public int Id { get; set; }
 
-    public int UserId { get; set; }
+    public int PredictionId { get; set; }
 
-    public User? User { get; set; }
+    public Prediction? Prediction { get; set; }
 
-    public string ForecastMonth { get; set; } = "";
+    public required string ForecastMonth { get; set; }
 
     public double RiskScore { get; set; }
 

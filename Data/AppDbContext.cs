@@ -13,7 +13,13 @@ public class AppDbContext : DbContext
     {
         modelBuilder.Entity<User>()
             .HasIndex(u => u.Email)
-            .IsUnique(); // IMPORTANT
+            .IsUnique();
+
+        modelBuilder.Entity<Forecast>()
+            .HasOne(f => f.Prediction)
+            .WithMany(p => p.Forecasts)
+            .HasForeignKey(f => f.PredictionId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         base.OnModelCreating(modelBuilder);
     }
