@@ -95,4 +95,40 @@ public class PredictionController : ControllerBase
             });
         }
     }
+
+    // ─────────────────────────────────────────
+    // PREDICTION
+    // ─────────────────────────────────────────
+
+    [HttpGet("/prediction/{predictionId}")]
+    public async Task<IActionResult>
+        GetPredictionDetails(int predictionId)
+    {
+        try
+        {
+            var data = await _predictionService
+                .GetPredictionDetailsAsync(
+                    predictionId);
+
+            if (data == null)
+            {
+                return NotFound(new
+                {
+                    status = "error",
+                    message = "Prediction not found"
+                });
+            }
+
+            return Ok(data);
+        }
+        catch
+        {
+            return StatusCode(500, new
+            {
+                status = "error",
+                message =
+                    "Prediction service temporarily unavailable"
+            });
+        }
+    }
 }
