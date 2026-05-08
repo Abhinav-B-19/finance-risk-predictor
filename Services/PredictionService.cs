@@ -295,9 +295,7 @@ public class PredictionService
     // ─────────────────────────────────────────
     // USER HISTORY
     // ─────────────────────────────────────────
-    public async Task<List<PredictionResponseDto>>
-        GetUserHistoryAsync(string userKey)
-    {
+    public async Task<List<PredictionHistorySummaryDto>> GetUserHistoryAsync(string userKey) {
         var user = await _context.Users
             .FirstOrDefaultAsync(
                 u => u.UserKey == userKey);
@@ -305,7 +303,7 @@ public class PredictionService
         if (user == null)
         {
             return new List<
-                PredictionResponseDto>();
+                PredictionHistorySummaryDto>();
         }
 
         var history = await _context.Predictions
@@ -316,8 +314,34 @@ public class PredictionService
             .ToListAsync();
 
         return history.Select(p =>
-            new PredictionResponseDto
+        {
+            var forecasts = p.Forecasts
+                .OrderBy(f => f.ForecastMonth)
+                .ToList();
+
+            var highestRiskScore = forecasts.Any()
+                ? forecasts.Max(f => f.RiskScore)
+                : 0;
+
+            string overallRiskLevel = "LOW";
+
+            if (highestRiskScore >= 70)
             {
+                overallRiskLevel = "HIGH";
+            }
+            else if (highestRiskScore >= 40)
+            {
+                overallRiskLevel = "MEDIUM";
+            }
+
+            return new PredictionHistorySummaryDto
+            {
+                PredictionId = p.Id,
+
+                UserKey = user.UserKey,
+
+                CreatedAt = p.CreatedAt,
+
                 Income = p.Income,
 
                 Expenses = p.Expenses,
@@ -326,25 +350,94 @@ public class PredictionService
 
                 Dti = p.Dti,
 
-                CreatedAt = p.CreatedAt,
+                ForecastMonths = forecasts.Count,
 
-                Forecasts = p.Forecasts
-                    .OrderBy(f =>
-                        f.ForecastMonth)
-                    .Select(f =>
-                        new ForecastDto
-                        {
-                            ForecastMonth =
-                                f.ForecastMonth,
+                HighestRiskScore = Math.Round(
+                    highestRiskScore,
+                    2),
 
-                            RiskScore =
-                                f.RiskScore,
+                OverallRiskLevel =
+                    overallRiskLevel
+            };
+        })
+        .ToList();
+    }
 
-                            RiskLevel =
-                                f.RiskLevel
-                        })
-                    .ToList()
-            })
+    public async Task<PredictionDetailsDto?> GetPredictionDetailsAsync(int predictionId) {
+        var prediction = await _context.Predictions
+            .Include(p => p.User)
+            .Include(p => p.Forecasts)
+            .FirstOrDefaultAsync(
+                p => p.Id == predictionId);
+
+        if (prediction == null)
+        {
+            return null;
+        }
+
+        var forecasts = prediction.Forecasts
+            .OrderBy(f => f.ForecastMonth)
             .ToList();
+
+        var highestRiskScore = forecasts.Any()
+            ? forecasts.Max(f => f.RiskScore)
+            : 0;
+
+        string overallRiskLevel = "LOW";
+
+        if (highestRiskScore >= 70)
+        {
+            overallRiskLevel = "HIGH";
+        }
+        else if (highestRiskScore >= 40)
+        {
+            overallRiskLevel = "MEDIUM";
+        }
+
+        return new PredictionDetailsDto
+        {
+            PredictionId = prediction.Id,
+
+            UserKey =
+                prediction.User?.UserKey ?? "",
+
+            CreatedAt = prediction.CreatedAt,
+
+            Income = prediction.Income,
+
+            Expenses = prediction.Expenses,
+
+            Debt = prediction.Debt,
+
+            Dti = prediction.Dti,
+
+            Summary = new PredictionSummaryDto
+            {
+                ForecastMonths =
+                    forecasts.Count,
+
+                HighestRiskScore =
+                    Math.Round(
+                        highestRiskScore,
+                        2),
+
+                OverallRiskLevel =
+                    overallRiskLevel
+            },
+
+            Forecasts = forecasts
+                .Select(f => new ForecastDto
+                {
+                    ForecastMonth =
+                        f.ForecastMonth,
+
+                    RiskScore =
+                        f.RiskScore,
+
+                    RiskLevel =
+                        f.RiskLevel
+                })
+                .ToList()
+        };
     }
 }
