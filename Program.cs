@@ -6,13 +6,21 @@ var builder = WebApplication.CreateBuilder(args);
 // SERVICES
 // ─────────────────────────────────────────
 
-builder.Services.AddControllers();
+builder.Services
+    .AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.PropertyNamingPolicy =
+            System.Text.Json.JsonNamingPolicy.CamelCase;
+    });
 
 builder.Services.AddEndpointsApiExplorer();
 
 builder.Services.AddSwaggerGen();
 
 builder.Services.AddHttpClient<PredictionService>();
+
+builder.Services.AddScoped<IHistoryAnalyticsService, HistoryAnalyticsService>();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(
