@@ -63,10 +63,7 @@ public class HistoryAnalyticsService : IHistoryAnalyticsService
 
                 var highestRiskScore = highestForecast?.RiskScore ?? 0;
 
-                var overallRiskLevel =
-                    !string.IsNullOrWhiteSpace(highestForecast?.RiskLevel)
-                        ? highestForecast.RiskLevel
-                        : prediction.Risk;
+                var overallRiskLevel = GetRiskLevel(highestRiskScore);
 
                 return new HistoryTrendPointDto
                 {
@@ -82,7 +79,11 @@ public class HistoryAnalyticsService : IHistoryAnalyticsService
             })
             .ToList();
 
-        var latestPrediction = historicalTrend
+        var latestPrediction = predictions
+            .OrderByDescending(p => p.CreatedAt)
+            .First();
+
+        var latestTrendPoint = historicalTrend
             .OrderByDescending(item => item.CreatedAt)
             .First();
 
@@ -92,7 +93,9 @@ public class HistoryAnalyticsService : IHistoryAnalyticsService
         var highestRiskScoreOverall = historicalTrend
             .Max(item => item.HighestRiskScore);
 
-        var futureTrendForecast = BuildFutureTrendForecast(historicalTrend);
+        var futureTrendForecast = BuildFutureTrendForecastFromLatestPrediction(
+            latestPrediction
+        );
 
         return new HistoryAnalyticsResponse
         {
@@ -100,56 +103,39 @@ public class HistoryAnalyticsService : IHistoryAnalyticsService
             TotalPredictions = historicalTrend.Count,
             AverageRiskScore = Math.Round(averageRiskScore, 2),
             HighestRiskScore = Math.Round(highestRiskScoreOverall, 2),
-            LatestRiskLevel = latestPrediction.OverallRiskLevel,
+            LatestRiskLevel = latestTrendPoint.OverallRiskLevel,
             HistoricalTrend = historicalTrend,
             FutureTrendForecast = futureTrendForecast
         };
     }
 
-    private static List<FutureRiskForecastDto> BuildFutureTrendForecast(
-        List<HistoryTrendPointDto> historicalTrend
+    private static List<FutureRiskForecastDto> BuildFutureTrendForecastFromLatestPrediction(
+        Prediction latestPrediction
     )
     {
-        if (historicalTrend.Count == 0)
+        if (latestPrediction.Forecasts.Count == 0)
         {
             return new List<FutureRiskForecastDto>();
         }
 
-        var latestRiskScore = historicalTrend
-            .Last()
-            .HighestRiskScore;
-
-        double monthlyChange = 0;
-
-        if (historicalTrend.Count >= 2)
-        {
-            var previousRiskScore = historicalTrend[^2].HighestRiskScore;
-
-            monthlyChange = latestRiskScore - previousRiskScore;
-        }
-
-        var forecast = new List<FutureRiskForecastDto>();
-
-        for (var month = 1; month <= 3; month++)
-        {
-            var predictedRiskScore = latestRiskScore + monthlyChange * month;
-
-            predictedRiskScore = Math.Max(0, predictedRiskScore);
-
-            var roundedRiskScore = Math.Round(predictedRiskScore, 2);
-
-            forecast.Add(new FutureRiskForecastDto
+        return latestPrediction.Forecasts
+            .OrderBy(f => f.GeneratedAt)
+            .ThenBy(f => f.Id)
+            .Select(forecast => new FutureRiskForecastDto
             {
-                ForecastMonth = $"Next Month {month}",
-                PredictedRiskScore = roundedRiskScore,
-                PredictedRiskLevel = GetRiskLevel(roundedRiskScore)
-            });
-        }
-
-        return forecast;
+                ForecastMonth = forecast.ForecastMonth,
+                PredictedRiskScore = Math.Round(
+                    Math.Clamp(forecast.RiskScore, 0, 100),
+                    2
+                ),
+                PredictedRiskLevel = !string.IsNullOrWhiteSpace(forecast.RiskLevel)
+                    ? forecast.RiskLevel
+                    : GetRiskLevel(forecast.RiskScore)
+            })
+            .ToList();
     }
 
-   private static string GetRiskLevel(double riskScore)
+    private static string GetRiskLevel(double riskScore)
     {
         string riskLevel = "LOW";
 
